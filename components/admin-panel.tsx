@@ -91,6 +91,50 @@ const ImageIcon = () => (
   </svg>
 )
 
+const AnalyticsIcon = () => (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+    />
+  </svg>
+)
+
+const BackupIcon = () => (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
+    />
+  </svg>
+)
+
+const ExportIcon = () => (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+    />
+  </svg>
+)
+
+const SaveIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
+    />
+  </svg>
+)
+
 interface AdminPanelProps {
   personnelData: PersonnelData[]
   onAddPersonnel: (person: PersonnelData) => { success: boolean; message: string }
@@ -109,7 +153,7 @@ export function AdminPanel({
   onDeletePersonnel,
   onLogout,
 }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<"add" | "edit" | "upload" | "settings">("add")
+  const [activeTab, setActiveTab] = useState<"add" | "edit" | "upload" | "settings" | "analytics">("add")
   const [editingPerson, setEditingPerson] = useState<PersonnelData | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [showPasswordChange, setShowPasswordChange] = useState(false)
@@ -121,6 +165,10 @@ export function AdminPanel({
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [faviconFile, setFaviconFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
+
+  const [selectedPersonnel, setSelectedPersonnel] = useState<string[]>([])
+  const [bulkAction, setBulkAction] = useState<"delete" | "export" | "">("")
+  const [showBulkConfirm, setShowBulkConfirm] = useState(false)
 
   const [formData, setFormData] = useState<PersonnelData>({
     personnelCode: "",
@@ -278,6 +326,126 @@ export function AdminPanel({
     }
   }
 
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedPersonnel(filteredPersonnel.map((p) => p.personnelCode))
+    } else {
+      setSelectedPersonnel([])
+    }
+  }
+
+  const handleSelectPerson = (personnelCode: string, checked: boolean) => {
+    if (checked) {
+      setSelectedPersonnel((prev) => [...prev, personnelCode])
+    } else {
+      setSelectedPersonnel((prev) => prev.filter((code) => code !== personnelCode))
+    }
+  }
+
+  const handleBulkAction = () => {
+    if (selectedPersonnel.length === 0) {
+      setMessage("لطفاً حداقل یک پرسنل را انتخاب کنید")
+      return
+    }
+    setShowBulkConfirm(true)
+  }
+
+  const executeBulkAction = () => {
+    if (bulkAction === "delete") {
+      let successCount = 0
+      selectedPersonnel.forEach((code) => {
+        const result = onDeletePersonnel(code)
+        if (result.success) successCount++
+      })
+      setMessage(`${successCount} پرسنل با موفقیت حذف شد`)
+    } else if (bulkAction === "export") {
+      exportSelectedPersonnel()
+    }
+
+    setSelectedPersonnel([])
+    setShowBulkConfirm(false)
+    setBulkAction("")
+    setTimeout(() => setMessage(""), 3000)
+  }
+
+  const exportSelectedPersonnel = () => {
+    const selectedData = personnelData.filter((p) => selectedPersonnel.includes(p.personnelCode))
+    const csvContent = [
+      "کد پرسنلی,نام فارسی,نام انگلیسی,شماره ویپ,پروژه,بخش,سمت",
+      ...selectedData.map(
+        (p) =>
+          `${p.personnelCode},${p.persianName},${p.englishName},${p.voipNumber},${p.project},${p.department},${p.position}`,
+      ),
+    ].join("\n")
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+    const link = document.createElement("a")
+    link.href = URL.createObjectURL(blob)
+    link.download = `personnel_export_${new Date().toISOString().split("T")[0]}.csv`
+    link.click()
+
+    setMessage(`${selectedData.length} پرسنل صادر شد`)
+  }
+
+  const exportAllData = () => {
+    const csvContent = [
+      "کد پرسنلی,نام فارسی,نام انگلیسی,شماره ویپ,پروژه,بخش,سمت",
+      ...personnelData.map(
+        (p) =>
+          `${p.personnelCode},${p.persianName},${p.englishName},${p.voipNumber},${p.project},${p.department},${p.position}`,
+      ),
+    ].join("\n")
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+    const link = document.createElement("a")
+    link.href = URL.createObjectURL(blob)
+    link.download = `all_personnel_${new Date().toISOString().split("T")[0]}.csv`
+    link.click()
+
+    setMessage("تمام اطلاعات پرسنل صادر شد")
+    setTimeout(() => setMessage(""), 3000)
+  }
+
+  const createBackup = () => {
+    const backupData = {
+      personnel: personnelData,
+      settings: appSettings,
+      timestamp: new Date().toISOString(),
+      version: "1.0",
+    }
+
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" })
+    const link = document.createElement("a")
+    link.href = URL.createObjectURL(blob)
+    link.download = `phonebook_backup_${new Date().toISOString().split("T")[0]}.json`
+    link.click()
+
+    setMessage("پشتیبان‌گیری با موفقیت انجام شد")
+    setTimeout(() => setMessage(""), 3000)
+  }
+
+  const analytics = {
+    totalPersonnel: personnelData.length,
+    projectStats: uniqueProjects
+      .map((project) => ({
+        name: project,
+        count: personnelData.filter((p) => p.project === project).length,
+      }))
+      .sort((a, b) => b.count - a.count),
+    departmentStats: uniqueDepartments
+      .map((dept) => ({
+        name: dept,
+        count: personnelData.filter((p) => p.department === dept).length,
+      }))
+      .sort((a, b) => b.count - a.count),
+    positionStats: uniquePositions
+      .map((pos) => ({
+        name: pos,
+        count: personnelData.filter((p) => p.position === pos).length,
+      }))
+      .sort((a, b) => b.count - a.count),
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-7xl mx-auto">
@@ -287,14 +455,32 @@ export function AdminPanel({
             <h1 className="text-3xl font-bold text-gray-900 text-center">پنل مدیریت</h1>
             <p className="text-gray-600 text-center">مدیریت اطلاعات پرسنل شرکت فراپخت</p>
           </div>
-          <Button
-            onClick={onLogout}
-            variant="outline"
-            className="flex items-center gap-2 border-red-200 text-red-600 hover:bg-red-50 bg-transparent"
-          >
-            <LogoutIcon />
-            خروج
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={createBackup}
+              variant="outline"
+              className="flex items-center gap-2 border-blue-200 text-blue-600 hover:bg-blue-50 bg-transparent"
+            >
+              <BackupIcon />
+              پشتیبان‌گیری
+            </Button>
+            <Button
+              onClick={exportAllData}
+              variant="outline"
+              className="flex items-center gap-2 border-green-200 text-green-600 hover:bg-green-50 bg-transparent"
+            >
+              <ExportIcon />
+              صدور کل
+            </Button>
+            <Button
+              onClick={onLogout}
+              variant="outline"
+              className="flex items-center gap-2 border-red-200 text-red-600 hover:bg-red-50 bg-transparent"
+            >
+              <LogoutIcon />
+              خروج
+            </Button>
+          </div>
         </div>
 
         {/* Message */}
@@ -311,11 +497,11 @@ export function AdminPanel({
         )}
 
         {/* Tabs */}
-        <div className="flex gap-2 mb-6 bg-white p-2 rounded-2xl shadow-sm">
+        <div className="flex gap-2 mb-6 bg-white p-2 rounded-2xl shadow-sm overflow-x-auto">
           <Button
             onClick={() => setActiveTab("add")}
             variant={activeTab === "add" ? "default" : "ghost"}
-            className={`flex-1 rounded-xl ${activeTab === "add" ? "bg-emerald-600 text-white" : "text-gray-600"}`}
+            className={`flex-1 rounded-xl whitespace-nowrap ${activeTab === "add" ? "bg-emerald-600 text-white" : "text-gray-600"}`}
           >
             <PlusIcon />
             افزودن پرسنل
@@ -323,7 +509,7 @@ export function AdminPanel({
           <Button
             onClick={() => setActiveTab("edit")}
             variant={activeTab === "edit" ? "default" : "ghost"}
-            className={`flex-1 rounded-xl ${activeTab === "edit" ? "bg-emerald-600 text-white" : "text-gray-600"}`}
+            className={`flex-1 rounded-xl whitespace-nowrap ${activeTab === "edit" ? "bg-emerald-600 text-white" : "text-gray-600"}`}
           >
             <EditIcon />
             ویرایش پرسنل
@@ -331,20 +517,61 @@ export function AdminPanel({
           <Button
             onClick={() => setActiveTab("upload")}
             variant={activeTab === "upload" ? "default" : "ghost"}
-            className={`flex-1 rounded-xl ${activeTab === "upload" ? "bg-emerald-600 text-white" : "text-gray-600"}`}
+            className={`flex-1 rounded-xl whitespace-nowrap ${activeTab === "upload" ? "bg-emerald-600 text-white" : "text-gray-600"}`}
           >
             <UploadIcon />
             بارگذاری فایل
           </Button>
           <Button
+            onClick={() => setActiveTab("analytics")}
+            variant={activeTab === "analytics" ? "default" : "ghost"}
+            className={`flex-1 rounded-xl whitespace-nowrap ${activeTab === "analytics" ? "bg-emerald-600 text-white" : "text-gray-600"}`}
+          >
+            <AnalyticsIcon />
+            آمار و گزارش
+          </Button>
+          <Button
             onClick={() => setActiveTab("settings")}
             variant={activeTab === "settings" ? "default" : "ghost"}
-            className={`flex-1 rounded-xl ${activeTab === "settings" ? "bg-emerald-600 text-white" : "text-gray-600"}`}
+            className={`flex-1 rounded-xl whitespace-nowrap ${activeTab === "settings" ? "bg-emerald-600 text-white" : "text-gray-600"}`}
           >
             <SettingsIcon />
             تنظیمات
           </Button>
         </div>
+
+        {/* Bulk Action Confirmation Modal */}
+        {showBulkConfirm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <Card className="max-w-md w-full mx-4">
+              <CardHeader>
+                <CardTitle className="text-center">تأیید عملیات گروهی</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-center mb-4">
+                  آیا از انجام این عملیات روی {selectedPersonnel.length} پرسنل انتخاب شده اطمینان دارید؟
+                </p>
+                <div className="flex gap-4 justify-center">
+                  <Button
+                    onClick={() => setShowBulkConfirm(false)}
+                    variant="outline"
+                    className="border-gray-200 rounded-xl"
+                  >
+                    انصراف
+                  </Button>
+                  <Button
+                    onClick={executeBulkAction}
+                    className={`rounded-xl ${
+                      bulkAction === "delete" ? "bg-red-600 hover:bg-red-700" : "bg-emerald-600 hover:bg-emerald-700"
+                    }`}
+                  >
+                    تأیید
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Add Personnel Tab */}
         {activeTab === "add" && (
@@ -451,7 +678,11 @@ export function AdminPanel({
                   >
                     پاک کردن
                   </Button>
-                  <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 rounded-xl">
+                  <Button
+                    type="submit"
+                    className="bg-emerald-600 hover:bg-emerald-700 rounded-xl flex items-center gap-2"
+                  >
+                    <SaveIcon />
                     افزودن پرسنل
                   </Button>
                 </div>
@@ -465,7 +696,29 @@ export function AdminPanel({
           <div className="space-y-6">
             <Card className="border-0 shadow-sm bg-white rounded-2xl">
               <CardHeader>
-                <CardTitle className="text-center text-gray-800">جستجو و ویرایش پرسنل</CardTitle>
+                <div className="flex justify-between items-center">
+                  <CardTitle className="text-center text-gray-800">جستجو و ویرایش پرسنل</CardTitle>
+                  {selectedPersonnel.length > 0 && (
+                    <div className="flex gap-2">
+                      <Select value={bulkAction} onValueChange={setBulkAction}>
+                        <SelectTrigger className="w-40">
+                          <SelectValue placeholder="عملیات گروهی" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="export">صدور انتخاب شده</SelectItem>
+                          <SelectItem value="delete">حذف انتخاب شده</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        onClick={handleBulkAction}
+                        disabled={!bulkAction}
+                        className="bg-emerald-600 hover:bg-emerald-700 rounded-xl"
+                      >
+                        اجرا ({selectedPersonnel.length})
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
                 <Input
@@ -480,6 +733,16 @@ export function AdminPanel({
                   <table className="w-full">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
+                        <th className="text-center p-3 font-semibold text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={
+                              selectedPersonnel.length === filteredPersonnel.length && filteredPersonnel.length > 0
+                            }
+                            onChange={(e) => handleSelectAll(e.target.checked)}
+                            className="rounded"
+                          />
+                        </th>
                         <th className="text-center p-3 font-semibold text-gray-700">کد پرسنلی</th>
                         <th className="text-center p-3 font-semibold text-gray-700">نام فارسی</th>
                         <th className="text-center p-3 font-semibold text-gray-700">شماره ویپ</th>
@@ -490,6 +753,14 @@ export function AdminPanel({
                     <tbody>
                       {filteredPersonnel.slice(0, 10).map((person) => (
                         <tr key={person.personnelCode} className="border-b border-gray-100 hover:bg-gray-50">
+                          <td className="p-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedPersonnel.includes(person.personnelCode)}
+                              onChange={(e) => handleSelectPerson(person.personnelCode, e.target.checked)}
+                              className="rounded"
+                            />
+                          </td>
                           <td className="p-3 font-mono text-sm">{person.personnelCode}</td>
                           <td className="p-3">{person.persianName}</td>
                           <td className="p-3 font-mono text-emerald-600">{person.voipNumber}</td>
@@ -633,7 +904,11 @@ export function AdminPanel({
                       >
                         انصراف
                       </Button>
-                      <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 rounded-xl">
+                      <Button
+                        type="submit"
+                        className="bg-emerald-600 hover:bg-emerald-700 rounded-xl flex items-center gap-2"
+                      >
+                        <SaveIcon />
                         به‌روزرسانی
                       </Button>
                     </div>
@@ -654,6 +929,111 @@ export function AdminPanel({
               <FileUpload onUploadComplete={handleFileUpload} />
             </CardContent>
           </Card>
+        )}
+
+        {activeTab === "analytics" && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <Card className="border-0 shadow-sm bg-white rounded-2xl">
+                <CardContent className="p-6 text-center">
+                  <div className="text-3xl font-bold text-emerald-600 mb-2">{analytics.totalPersonnel}</div>
+                  <div className="text-gray-600">کل پرسنل</div>
+                </CardContent>
+              </Card>
+              <Card className="border-0 shadow-sm bg-white rounded-2xl">
+                <CardContent className="p-6 text-center">
+                  <div className="text-3xl font-bold text-blue-600 mb-2">{uniqueProjects.length}</div>
+                  <div className="text-gray-600">پروژه‌ها</div>
+                </CardContent>
+              </Card>
+              <Card className="border-0 shadow-sm bg-white rounded-2xl">
+                <CardContent className="p-6 text-center">
+                  <div className="text-3xl font-bold text-purple-600 mb-2">{uniqueDepartments.length}</div>
+                  <div className="text-gray-600">بخش‌ها</div>
+                </CardContent>
+              </Card>
+              <Card className="border-0 shadow-sm bg-white rounded-2xl">
+                <CardContent className="p-6 text-center">
+                  <div className="text-3xl font-bold text-orange-600 mb-2">{uniquePositions.length}</div>
+                  <div className="text-gray-600">سمت‌ها</div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <Card className="border-0 shadow-sm bg-white rounded-2xl">
+                <CardHeader>
+                  <CardTitle className="text-center text-gray-800">توزیع پروژه‌ها</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {analytics.projectStats.slice(0, 5).map((stat, index) => (
+                      <div key={stat.name} className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">{stat.name}</span>
+                        <div className="flex items-center gap-2">
+                          <div className="w-20 bg-gray-200 rounded-full h-2">
+                            <div
+                              className="bg-emerald-600 h-2 rounded-full"
+                              style={{ width: `${(stat.count / analytics.totalPersonnel) * 100}%` }}
+                            ></div>
+                          </div>
+                          <span className="text-sm font-semibold text-gray-900">{stat.count}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-0 shadow-sm bg-white rounded-2xl">
+                <CardHeader>
+                  <CardTitle className="text-center text-gray-800">توزیع بخش‌ها</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {analytics.departmentStats.slice(0, 5).map((stat, index) => (
+                      <div key={stat.name} className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">{stat.name}</span>
+                        <div className="flex items-center gap-2">
+                          <div className="w-20 bg-gray-200 rounded-full h-2">
+                            <div
+                              className="bg-blue-600 h-2 rounded-full"
+                              style={{ width: `${(stat.count / analytics.totalPersonnel) * 100}%` }}
+                            ></div>
+                          </div>
+                          <span className="text-sm font-semibold text-gray-900">{stat.count}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-0 shadow-sm bg-white rounded-2xl">
+                <CardHeader>
+                  <CardTitle className="text-center text-gray-800">توزیع سمت‌ها</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {analytics.positionStats.slice(0, 5).map((stat, index) => (
+                      <div key={stat.name} className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">{stat.name}</span>
+                        <div className="flex items-center gap-2">
+                          <div className="w-20 bg-gray-200 rounded-full h-2">
+                            <div
+                              className="bg-purple-600 h-2 rounded-full"
+                              style={{ width: `${(stat.count / analytics.totalPersonnel) * 100}%` }}
+                            ></div>
+                          </div>
+                          <span className="text-sm font-semibold text-gray-900">{stat.count}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         )}
 
         {/* Settings Tab */}

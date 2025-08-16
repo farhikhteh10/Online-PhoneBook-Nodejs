@@ -13,6 +13,7 @@ import { AdminPanel } from "@/components/admin-panel"
 import { AuthManager } from "@/lib/auth"
 import { toPersianNumbers } from "@/lib/utils"
 import { AppSettingsManager } from "@/lib/app-settings"
+import { EnhancedVipCalling } from "@/components/enhanced-vip-calling"
 
 const SearchIcon = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -67,36 +68,77 @@ const AdminIcon = () => (
 const PWAInstallPrompt = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
   const [showInstallPrompt, setShowInstallPrompt] = useState(false)
+  const [isInstalled, setIsInstalled] = useState(false)
 
   useEffect(() => {
+    // Check if app is already installed
+    const checkInstallation = () => {
+      if (window.matchMedia("(display-mode: standalone)").matches || (window.navigator as any).standalone === true) {
+        setIsInstalled(true)
+        return
+      }
+    }
+
+    checkInstallation()
+
     const handler = (e: Event) => {
       e.preventDefault()
       setDeferredPrompt(e)
-      setShowInstallPrompt(true)
+      if (!isInstalled) {
+        setShowInstallPrompt(true)
+      }
+    }
+
+    const appInstalledHandler = () => {
+      setIsInstalled(true)
+      setShowInstallPrompt(false)
+      setDeferredPrompt(null)
     }
 
     window.addEventListener("beforeinstallprompt", handler)
+    window.addEventListener("appinstalled", appInstalledHandler)
 
-    return () => window.removeEventListener("beforeinstallprompt", handler)
-  }, [])
+    const autoPromptTimer = setTimeout(() => {
+      if (deferredPrompt && !isInstalled && !localStorage.getItem("pwa-install-dismissed")) {
+        setShowInstallPrompt(true)
+      }
+    }, 30000)
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handler)
+      window.removeEventListener("appinstalled", appInstalledHandler)
+      clearTimeout(autoPromptTimer)
+    }
+  }, [deferredPrompt, isInstalled])
 
   const handleInstall = async () => {
     if (!deferredPrompt) return
 
-    deferredPrompt.prompt()
-    const { outcome } = await deferredPrompt.userChoice
+    try {
+      deferredPrompt.prompt()
+      const { outcome } = await deferredPrompt.userChoice
 
-    if (outcome === "accepted") {
-      setDeferredPrompt(null)
-      setShowInstallPrompt(false)
+      if (outcome === "accepted") {
+        setDeferredPrompt(null)
+        setShowInstallPrompt(false)
+        setIsInstalled(true)
+        localStorage.setItem("pwa-installed", "true")
+      }
+    } catch (error) {
+      console.error("PWA installation failed:", error)
     }
   }
 
-  if (!showInstallPrompt) return null
+  const handleDismiss = () => {
+    setShowInstallPrompt(false)
+    localStorage.setItem("pwa-install-dismissed", "true")
+  }
+
+  if (!showInstallPrompt || isInstalled) return null
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 max-w-sm">
-      <Card className="glass border-border/50 shadow-2xl rounded-2xl sm:rounded-3xl overflow-hidden animate-float">
+    <div className="fixed bottom-4 right-4 z-50 max-w-sm animate-in slide-in-from-bottom-4 duration-500">
+      <Card className="glass border-border/50 shadow-2xl rounded-2xl sm:rounded-3xl overflow-hidden">
         <CardContent className="p-4">
           <div className="flex items-start gap-3">
             <div className="p-2 bg-primary/20 rounded-xl flex-shrink-0">
@@ -111,7 +153,9 @@ const PWAInstallPrompt = () => {
             </div>
             <div className="flex-1 min-w-0">
               <h4 className="font-bold text-sm mb-1 text-right">نصب اپلیکیشن</h4>
-              <p className="text-xs text-muted-foreground mb-3 text-right">دفترچه تلفن را روی گوشی خود نصب کنید</p>
+              <p className="text-xs text-muted-foreground mb-3 text-right">
+                دفترچه تلفن را روی گوشی خود نصب کنید تا دسترسی سریع‌تری داشته باشید
+              </p>
               <div className="flex gap-2">
                 <Button
                   onClick={handleInstall}
@@ -120,13 +164,8 @@ const PWAInstallPrompt = () => {
                 >
                   نصب
                 </Button>
-                <Button
-                  onClick={() => setShowInstallPrompt(false)}
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs rounded-xl"
-                >
-                  بستن
+                <Button onClick={handleDismiss} variant="ghost" size="sm" className="text-xs rounded-xl">
+                  بعداً
                 </Button>
               </div>
             </div>
@@ -164,71 +203,7 @@ const VipNumberPopup = ({
   onClose,
   position,
 }: { voipNumber: string; onClose: () => void; position: { x: number; y: number } }) => {
-  const copyNumber = async () => {
-    try {
-      await navigator.clipboard.writeText(voipNumber)
-      alert("شماره کپی شد")
-      onClose()
-    } catch (err) {
-      console.error("Failed to copy:", err)
-      alert("خطا در کپی کردن شماره")
-    }
-  }
-
-  const makeCall = () => {
-    const sipUri = `sip:${voipNumber}@yekta.sitakpbx`
-    const telUri = `tel:${voipNumber}`
-
-    // Try different approaches for better compatibility
-    try {
-      // First try to open with PortSIP UC app using custom scheme
-      const portsipUri = `portsip:${voipNumber}@yekta.sitakpbx`
-      window.open(portsipUri, "_blank")
-
-      // Fallback to standard SIP URI
-      setTimeout(() => {
-        window.open(sipUri, "_blank")
-      }, 500)
-
-      // Final fallback to tel: protocol for mobile devices
-      setTimeout(() => {
-        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-          window.open(telUri, "_blank")
-        }
-      }, 1000)
-    } catch (error) {
-      // If all else fails, try to open with system default
-      try {
-        window.location.href = sipUri
-      } catch (fallbackError) {
-        alert(`برای تماس از این شماره استفاده کنید: ${voipNumber}@yekta.sitakpbx`)
-      }
-    }
-
-    onClose()
-  }
-
-  return (
-    <div
-      className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-2 min-w-[150px]"
-      style={{
-        left: position.x,
-        top: position.y,
-        transform: "translate(-50%, -100%)",
-      }}
-    >
-      <div className="flex flex-col gap-1">
-        <Button onClick={copyNumber} variant="ghost" size="sm" className="justify-start gap-2 text-right h-8 px-3">
-          <CopyIcon />
-          کپی شماره
-        </Button>
-        <Button onClick={makeCall} variant="ghost" size="sm" className="justify-start gap-2 text-right h-8 px-3">
-          <CallIcon />
-          تماس
-        </Button>
-      </div>
-    </div>
-  )
+  return <EnhancedVipCalling voipNumber={voipNumber} onClose={onClose} position={position} />
 }
 
 export default function PhoneDirectory() {
@@ -261,6 +236,25 @@ export default function PhoneDirectory() {
 
     window.addEventListener("storage", handleStorageChange)
     return () => window.removeEventListener("storage", handleStorageChange)
+  }, [])
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+
+    if (urlParams.get("search") === "true") {
+      // Focus search input when opened via search shortcut
+      setTimeout(() => {
+        const searchInput = document.querySelector('input[placeholder*="جستجو"]') as HTMLInputElement
+        if (searchInput) {
+          searchInput.focus()
+        }
+      }, 100)
+    }
+
+    if (urlParams.get("admin") === "true") {
+      // Show login when opened via admin shortcut
+      setShowLogin(true)
+    }
   }, [])
 
   // Get unique values for filters
@@ -400,6 +394,8 @@ export default function PhoneDirectory() {
   return (
     <div className="min-h-screen bg-background p-2 sm:p-4 relative">
       {showLogin && <LoginForm onLogin={handleLogin} />}
+
+      <PWAInstallPrompt />
 
       {vipPopup && (
         <VipNumberPopup
@@ -583,25 +579,65 @@ export default function PhoneDirectory() {
 
         <Card className="glass border-border/50 shadow-2xl rounded-2xl sm:rounded-3xl overflow-hidden mx-2 sm:mx-0">
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
+            {/* Mobile card layout */}
+            <div className="block md:hidden">
+              {filteredData.map((person, index) => (
+                <div
+                  key={person.personnelCode}
+                  className={`p-4 border-b border-border/30 hover:bg-primary/5 transition-all duration-300 ${
+                    index % 2 === 0 ? "bg-card/50" : "bg-background/50"
+                  } ${index === filteredData.length - 1 ? "border-b-0 rounded-b-2xl" : ""} ${index === 0 ? "rounded-t-2xl" : ""}`}
+                >
+                  <div className="flex flex-col gap-3">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <h3 className="font-bold text-foreground text-base mb-1">{person.persianName}</h3>
+                        <p className="text-sm text-muted-foreground">{person.englishName}</p>
+                      </div>
+                      <button
+                        onClick={(e) => handleVipClick(person.voipNumber, e)}
+                        className="bg-primary/10 hover:bg-primary/20 px-3 py-2 rounded-lg transition-colors duration-200 cursor-pointer flex items-center gap-2"
+                      >
+                        <CallIcon />
+                        <span className="font-mono text-primary font-bold text-sm">
+                          {toPersianNumbers(person.voipNumber)}
+                        </span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">پروژه:</span>
+                        <span className="text-foreground bg-muted/50 px-2 py-1 rounded text-xs">{person.project}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">بخش:</span>
+                        <span className="text-foreground">{person.department}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">سمت:</span>
+                        <span className="text-foreground">{person.position}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop table layout */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full min-w-[800px] rounded-2xl overflow-hidden">
                 <thead className="bg-gray-100 border-b border-border/50">
                   <tr>
                     <th className="text-center p-3 sm:p-6 font-bold text-slate-800 text-sm sm:text-base first:rounded-tl-2xl">
                       نام فارسی
                     </th>
-                    <th className="text-center p-3 sm:p-6 font-bold text-slate-800 text-sm sm:text-base hidden md:table-cell">
+                    <th className="text-center p-3 sm:p-6 font-bold text-slate-800 text-sm sm:text-base">
                       نام انگلیسی
                     </th>
-                    <th className="text-center p-3 sm:p-6 font-bold text-slate-800 text-sm sm:text-base hidden md:table-cell">
-                      پروژه
-                    </th>
-                    <th className="text-center p-3 sm:p-6 font-bold text-slate-800 text-sm sm:text-base hidden md:table-cell">
-                      بخش
-                    </th>
-                    <th className="text-center p-3 sm:p-6 font-bold text-slate-800 text-sm sm:text-base hidden md:table-cell">
-                      سمت
-                    </th>
+                    <th className="text-center p-3 sm:p-6 font-bold text-slate-800 text-sm sm:text-base">پروژه</th>
+                    <th className="text-center p-3 sm:p-6 font-bold text-slate-800 text-sm sm:text-base">بخش</th>
+                    <th className="text-center p-3 sm:p-6 font-bold text-slate-800 text-sm sm:text-base">سمت</th>
                     <th className="text-center p-3 sm:p-6 font-bold text-slate-800 text-sm sm:text-base last:rounded-tr-2xl">
                       شماره ویپ
                     </th>
@@ -620,16 +656,16 @@ export default function PhoneDirectory() {
                       >
                         {person.persianName}
                       </td>
-                      <td className="p-3 sm:p-6 text-muted-foreground text-sm sm:text-base text-center hidden md:table-cell">
+                      <td className="p-3 sm:p-6 text-muted-foreground text-sm sm:text-base text-center">
                         {person.englishName}
                       </td>
-                      <td className="p-3 sm:p-6 text-center hidden md:table-cell">
+                      <td className="p-3 sm:p-6 text-center">
                         <span className="text-xs sm:text-sm text-foreground bg-muted/50 px-3 py-1.5 rounded-lg">
                           {person.project}
                         </span>
                       </td>
-                      <td className="p-3 sm:p-6 text-center hidden md:table-cell">{person.department}</td>
-                      <td className="p-3 sm:p-6 text-center hidden md:table-cell">{person.position}</td>
+                      <td className="p-3 sm:p-6 text-center">{person.department}</td>
+                      <td className="p-3 sm:p-6 text-center">{person.position}</td>
                       <td
                         className={`p-3 sm:p-6 font-mono text-primary font-bold text-sm sm:text-base text-center ${index === filteredData.length - 1 ? "rounded-br-2xl" : ""}`}
                       >
@@ -647,7 +683,7 @@ export default function PhoneDirectory() {
             </div>
 
             {filteredData.length === 0 && (
-              <div className="text-center py-12 sm:py-20 px-4">
+              <div className="text-center py-12 sm:py-20 px-4 sm:px-6">
                 <div className="p-4 sm:p-6 bg-gradient-to-br from-primary/20 to-secondary/20 rounded-full w-16 sm:w-20 h-16 sm:h-20 mx-auto mb-4 sm:mb-6 flex items-center justify-center animate-float">
                   <UsersIcon />
                 </div>
