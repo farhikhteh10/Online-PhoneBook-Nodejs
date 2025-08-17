@@ -10,7 +10,7 @@ export interface AppSettings {
 const DEFAULT_SETTINGS: AppSettings = {
   companyName: "فراپخت",
   appTitle: "دفترچه تلفن آنلاین پرسنل شرکت فراپخت",
-  logoUrl: "/logo-farapokht.png",
+  logoUrl: "/logo.png",
   faviconUrl: "/favicon.ico",
   themeColor: "#f97316",
   designerCredit: "طراحی شده توسط هادی علایی",

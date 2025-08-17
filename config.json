@@ -1,0 +1,9 @@
+{
+  "db": {
+    "host": "localhost",
+    "port": 5432,
+    "user": "your_database_user",
+    "password": "your_database_password",
+    "database": "phonebook_db"
+  }
+}

@@ -127,23 +127,11 @@ export const EnhancedVipCalling = ({ voipNumber, onClose, position }: EnhancedVi
       try {
         document.execCommand("copy")
         alert("شماره کپی شد")
-      } catch (fallbackErr) {
+      } catch {
         alert("خطا در کپی کردن شماره")
       }
       document.body.removeChild(textArea)
       onClose()
-    }
-  }
-
-  const copyFullNumber = async () => {
-    const fullNumber = `${voipNumber}@yekta.sitakpbx`
-    try {
-      await navigator.clipboard.writeText(fullNumber)
-      alert("شماره کامل کپی شد")
-      onClose()
-    } catch (err) {
-      console.error("Failed to copy:", err)
-      alert("خطا در کپی کردن شماره")
     }
   }
 
@@ -156,23 +144,17 @@ export const EnhancedVipCalling = ({ voipNumber, onClose, position }: EnhancedVi
       const strategy = callStrategies[i]
 
       setTimeout(async () => {
-        // Update status to attempting
         setCallAttempts((prev) =>
           prev.map((attempt, index) => (index === i ? { ...attempt, status: "attempting" } : attempt)),
         )
 
         try {
-          // Try to open the URI
           const success = await attemptCall(strategy.uri)
-
-          // Update status based on result
           setCallAttempts((prev) =>
             prev.map((attempt, index) =>
               index === i ? { ...attempt, status: success ? "success" : "failed" } : attempt,
             ),
           )
-
-          // If successful, stop further attempts
           if (success && i < callStrategies.length - 1) {
             setCallAttempts((prev) =>
               prev.map((attempt, index) => (index > i ? { ...attempt, status: "pending" } : attempt)),
@@ -185,7 +167,6 @@ export const EnhancedVipCalling = ({ voipNumber, onClose, position }: EnhancedVi
           )
         }
 
-        // If this is the last attempt, finish
         if (i === callStrategies.length - 1) {
           setTimeout(() => {
             setIsAttempting(false)
@@ -198,7 +179,6 @@ export const EnhancedVipCalling = ({ voipNumber, onClose, position }: EnhancedVi
   const attemptCall = async (uri: string): Promise<boolean> => {
     return new Promise((resolve) => {
       try {
-        // Create a hidden link and click it
         const link = document.createElement("a")
         link.href = uri
         link.target = "_blank"
@@ -207,15 +187,12 @@ export const EnhancedVipCalling = ({ voipNumber, onClose, position }: EnhancedVi
         link.click()
         document.body.removeChild(link)
 
-        // Also try window.open as fallback
         const popup = window.open(uri, "_blank")
 
-        // Check if popup was blocked
         setTimeout(() => {
           if (popup && !popup.closed) {
             resolve(true)
           } else {
-            // Try location.href as final fallback
             try {
               window.location.href = uri
               resolve(true)
@@ -224,7 +201,7 @@ export const EnhancedVipCalling = ({ voipNumber, onClose, position }: EnhancedVi
             }
           }
         }, 100)
-      } catch (error) {
+      } catch {
         resolve(false)
       }
     })
@@ -234,8 +211,7 @@ export const EnhancedVipCalling = ({ voipNumber, onClose, position }: EnhancedVi
     const telUri = `tel:${voipNumber}`
     try {
       window.open(telUri, "_blank")
-    } catch (error) {
-      // Fallback for desktop browsers
+    } catch {
       if (navigator.userAgent.includes("Mobile")) {
         window.location.href = telUri
       } else {
@@ -302,7 +278,7 @@ export const EnhancedVipCalling = ({ voipNumber, onClose, position }: EnhancedVi
                 disabled={isAttempting}
               >
                 {isAttempting ? <LoadingIcon /> : <CallIcon />}
-                {isAttempting ? "در حال تماس VIP..." : "تماس VIP (چندگانه)"}
+                {isAttempting ? "در حال تماس VoIP..." : "تماس VoIP (چندگانه)"}
               </Button>
 
               <div className="grid grid-cols-2 gap-2">
@@ -326,15 +302,6 @@ export const EnhancedVipCalling = ({ voipNumber, onClose, position }: EnhancedVi
                   کپی شماره
                 </Button>
               </div>
-
-              <Button
-                onClick={copyFullNumber}
-                variant="ghost"
-                size="sm"
-                className="justify-center gap-2 h-8 text-xs text-muted-foreground"
-              >
-                کپی شماره کامل
-              </Button>
             </div>
 
             {showAttempts && callAttempts.length > 0 && (

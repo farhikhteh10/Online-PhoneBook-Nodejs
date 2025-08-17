@@ -3,14 +3,15 @@ const nextConfig = {
   output: 'export',
   trailingSlash: true,
   eslint: {
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false,
   },
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   images: {
     unoptimized: true
   },
+ 
 }
 
 export default nextConfig

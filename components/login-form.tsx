@@ -1,9 +1,8 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
-import { Button } from "@/components/ui/button-fallback"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { AuthManager } from "@/lib/auth"
@@ -74,10 +73,10 @@ export function LoginForm({ onLogin }: LoginFormProps) {
         setError(result.message)
         onLogin(false)
       }
-    } catch (err) {
+    } catch {
       setError("خطای غیرمنتظره رخ داد")
       onLogin(false)
-    } finally {
+    } finally { 
       setIsLoading(false)
     }
   }
@@ -87,7 +86,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
       <Card className="w-full max-w-md bg-white rounded-2xl shadow-2xl">
         <CardHeader className="text-center pb-4">
           <div className="flex justify-between items-center mb-4">
-            <div></div>
+            <div />
             <CardTitle className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <LockIcon />
               ورود به پنل مدیریت

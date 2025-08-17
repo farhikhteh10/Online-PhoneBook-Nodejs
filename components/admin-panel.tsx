@@ -1,22 +1,26 @@
 "use client"
 
-import type React from "react"
-
-import { useState } from "react"
-import { Button } from "@/components/ui/button-fallback"
+import React, { useState, useEffect, useMemo } from "react"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge-fallback"
-import { type PersonnelData, getUniqueProjects, getUniqueDepartments, getUniquePositions } from "@/lib/personnel-data"
+import { Badge } from "@/components/ui/badge"
+import { 
+    getUniqueProjects, 
+    getUniqueDepartments, 
+    getUniquePositions, 
+    type PersonnelData,
+    type Project,
+    type Department,
+    type Position
+} from "@/lib/personnel-data"
 import { AuthManager } from "@/lib/auth"
 import { validatePersonnelData } from "@/lib/validation"
 import { FileUpload } from "@/components/file-upload"
 import type { FileUploadResult } from "@/lib/file-utils"
 import { SecurityMonitor } from "@/components/security-monitor"
-import { SecurityUtils } from "@/lib/security-utils"
 import { AppSettingsManager, type AppSettings } from "@/lib/app-settings"
-import { uploadFile, validateImageFile } from "@/lib/file-upload-utils"
 
 const PlusIcon = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -80,17 +84,6 @@ const SettingsIcon = () => (
   </svg>
 )
 
-const ImageIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-    />
-  </svg>
-)
-
 const AnalyticsIcon = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path
@@ -108,7 +101,7 @@ const BackupIcon = () => (
       strokeLinecap="round"
       strokeLinejoin="round"
       strokeWidth={2}
-      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
+      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l-3-3m-3 3V10"
     />
   </svg>
 )
@@ -136,15 +129,14 @@ const SaveIcon = () => (
 )
 
 interface AdminPanelProps {
-  personnelData: PersonnelData[]
-  onAddPersonnel: (person: PersonnelData) => { success: boolean; message: string }
-  onUpdatePersonnel: (
-    personnelCode: string,
-    updatedData: Partial<PersonnelData>,
-  ) => { success: boolean; message: string }
-  onDeletePersonnel: (personnelCode: string) => { success: boolean; message: string }
-  onLogout: () => void
+  personnelData: PersonnelData[];
+  onAddPersonnel: (person: Omit<PersonnelData, 'id'>) => Promise<{ success: boolean; message: string }>;
+  onUpdatePersonnel: (personnelCode: string, updatedData: Partial<PersonnelData>) => Promise<{ success: boolean; message: string }>;
+  onDeletePersonnel: (personnelCode: string) => Promise<{ success: boolean; message: string }>;
+  onLogout: () => void;
 }
+
+const ITEMS_PER_PAGE = 10;
 
 export function AdminPanel({
   personnelData,
@@ -153,24 +145,41 @@ export function AdminPanel({
   onDeletePersonnel,
   onLogout,
 }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<"add" | "edit" | "upload" | "settings" | "analytics">("add")
-  const [editingPerson, setEditingPerson] = useState<PersonnelData | null>(null)
-  const [searchTerm, setSearchTerm] = useState("")
-  const [showPasswordChange, setShowPasswordChange] = useState(false)
-  const [newPassword, setNewPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const [message, setMessage] = useState("")
+  const [activeTab, setActiveTab] = useState<"add" | "edit" | "upload" | "settings" | "analytics">("add");
+  const [editingPerson, setEditingPerson] = useState<PersonnelData | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [showPasswordChange, setShowPasswordChange] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [message, setMessage] = useState("");
 
-  const [appSettings, setAppSettings] = useState<AppSettings>(AppSettingsManager.getInstance().getSettings())
-  const [logoFile, setLogoFile] = useState<File | null>(null)
-  const [faviconFile, setFaviconFile] = useState<File | null>(null)
-  const [isUploading, setIsUploading] = useState(false)
+  const [appSettings, setAppSettings] = useState<AppSettings>(AppSettingsManager.getInstance().getSettings());
 
-  const [selectedPersonnel, setSelectedPersonnel] = useState<string[]>([])
-  const [bulkAction, setBulkAction] = useState<"delete" | "export" | "">("")
-  const [showBulkConfirm, setShowBulkConfirm] = useState(false)
+  const [selectedPersonnel, setSelectedPersonnel] = useState<string[]>([]);
+  const [bulkAction, setBulkAction] = useState<"delete" | "export" | "">("");
+  const [showBulkConfirm, setShowBulkConfirm] = useState(false);
+  
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [positions, setPositions] = useState<Position[]>([]);
+  
+  const [currentPage, setCurrentPage] = useState(1);
 
-  const [formData, setFormData] = useState<PersonnelData>({
+  useEffect(() => {
+      const fetchLookups = async () => {
+          const [projs, depts, pos] = await Promise.all([
+              getUniqueProjects(),
+              getUniqueDepartments(),
+              getUniquePositions()
+          ]);
+          setProjects(projs);
+          setDepartments(depts);
+          setPositions(pos);
+      };
+      fetchLookups();
+  }, []);
+
+  const [formData, setFormData] = useState<Omit<PersonnelData, 'id'>>({
     personnelCode: "",
     persianName: "",
     englishName: "",
@@ -193,39 +202,26 @@ export function AdminPanel({
     setEditingPerson(null)
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-
-    const securityValidation = SecurityUtils.validatePersonnelData(formData)
-    if (!securityValidation.isValid) {
-      setMessage(securityValidation.errors.join(", "))
-      SecurityUtils.logSecurityEvent("Invalid personnel data submission", { errors: securityValidation.errors })
-      return
-    }
-
-    const validation = validatePersonnelData(formData)
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const validation = validatePersonnelData(formData);
     if (!validation.isValid) {
-      setMessage(validation.errors.join(", "))
-      return
+        setMessage(validation.errors.join(", "));
+        return;
     }
 
+    let result;
     if (editingPerson) {
-      const result = onUpdatePersonnel(editingPerson.personnelCode, formData)
-      setMessage(result.message)
-      if (result.success) {
-        SecurityUtils.logSecurityEvent("Personnel data updated", { personnelCode: editingPerson.personnelCode })
-      }
+        result = await onUpdatePersonnel(editingPerson.personnelCode, formData);
     } else {
-      const result = onAddPersonnel(formData)
-      setMessage(result.message)
-      if (result.success) {
-        resetForm()
-        SecurityUtils.logSecurityEvent("New personnel added", { personnelCode: formData.personnelCode })
-      }
+        result = await onAddPersonnel(formData);
+        if (result.success) {
+            resetForm();
+        }
     }
-
-    setTimeout(() => setMessage(""), 3000)
-  }
+    setMessage(result.message);
+    setTimeout(() => setMessage(""), 3000);
+  };
 
   const handleEdit = (person: PersonnelData) => {
     setFormData(person)
@@ -233,13 +229,10 @@ export function AdminPanel({
     setActiveTab("edit")
   }
 
-  const handleDelete = (personnelCode: string) => {
+  const handleDelete = async (personnelCode: string) => {
     if (confirm("آیا از حذف این پرسنل اطمینان دارید؟")) {
-      const result = onDeletePersonnel(personnelCode)
+      const result = await onDeletePersonnel(personnelCode)
       setMessage(result.message)
-      if (result.success) {
-        SecurityUtils.logSecurityEvent("Personnel deleted", { personnelCode })
-      }
       setTimeout(() => setMessage(""), 3000)
     }
   }
@@ -263,49 +256,25 @@ export function AdminPanel({
     setTimeout(() => setMessage(""), 3000)
   }
 
-  const filteredPersonnel = personnelData.filter(
-    (person) =>
-      person.persianName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      person.englishName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      person.personnelCode.includes(searchTerm),
-  )
+  const filteredPersonnel = useMemo(() => {
+    return personnelData.filter(
+      (person) =>
+        person.persianName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        person.englishName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        person.personnelCode.includes(searchTerm),
+    )
+  }, [personnelData, searchTerm]);
 
-  const uniqueProjects = getUniqueProjects()
-  const uniqueDepartments = getUniqueDepartments()
-  const uniquePositions = getUniquePositions()
+  const paginatedPersonnel = useMemo(() => {
+      const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+      return filteredPersonnel.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredPersonnel, currentPage]);
+
+  const totalPages = Math.ceil(filteredPersonnel.length / ITEMS_PER_PAGE);
 
   const handleFileUpload = (result: FileUploadResult) => {
     setMessage(result.message)
     setTimeout(() => setMessage(""), 5000)
-  }
-
-  const handleLogoUpload = async (file: File, type: "logo" | "favicon") => {
-    setIsUploading(true)
-    try {
-      const validation = await validateImageFile(file)
-      if (!validation.valid) {
-        setMessage(validation.error || "فایل نامعتبر است")
-        return
-      }
-
-      const uploadedUrl = await uploadFile(file, type)
-      const settingsManager = AppSettingsManager.getInstance()
-
-      if (type === "logo") {
-        settingsManager.updateSettings({ logoUrl: uploadedUrl })
-        setMessage("لوگو با موفقیت آپلود شد")
-      } else {
-        settingsManager.updateSettings({ faviconUrl: uploadedUrl })
-        setMessage("فاویکون با موفقیت آپلود شد")
-      }
-
-      setAppSettings(settingsManager.getSettings())
-    } catch (error) {
-      setMessage("خطا در آپلود فایل")
-    } finally {
-      setIsUploading(false)
-      setTimeout(() => setMessage(""), 3000)
-    }
   }
 
   const handleSettingsUpdate = (field: keyof AppSettings, value: string) => {
@@ -354,8 +323,9 @@ export function AdminPanel({
     if (bulkAction === "delete") {
       let successCount = 0
       selectedPersonnel.forEach((code) => {
-        const result = onDeletePersonnel(code)
-        if (result.success) successCount++
+        onDeletePersonnel(code).then(result => {
+            if (result.success) successCount++;
+        });
       })
       setMessage(`${successCount} پرسنل با موفقیت حذف شد`)
     } else if (bulkAction === "export") {
@@ -378,7 +348,7 @@ export function AdminPanel({
       ),
     ].join("\n")
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+    const blob = new Blob([`\ufeff${csvContent}`], { type: "text/csv;charset=utf-8;" })
     const link = document.createElement("a")
     link.href = URL.createObjectURL(blob)
     link.download = `personnel_export_${new Date().toISOString().split("T")[0]}.csv`
@@ -396,7 +366,7 @@ export function AdminPanel({
       ),
     ].join("\n")
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+    const blob = new Blob([`\ufeff${csvContent}`], { type: "text/csv;charset=utf-8;" })
     const link = document.createElement("a")
     link.href = URL.createObjectURL(blob)
     link.download = `all_personnel_${new Date().toISOString().split("T")[0]}.csv`
@@ -426,22 +396,22 @@ export function AdminPanel({
 
   const analytics = {
     totalPersonnel: personnelData.length,
-    projectStats: uniqueProjects
+    projectStats: projects
       .map((project) => ({
-        name: project,
-        count: personnelData.filter((p) => p.project === project).length,
+        name: project.name,
+        count: personnelData.filter((p) => p.project === project.name).length,
       }))
       .sort((a, b) => b.count - a.count),
-    departmentStats: uniqueDepartments
+    departmentStats: departments
       .map((dept) => ({
-        name: dept,
-        count: personnelData.filter((p) => p.department === dept).length,
+        name: dept.name,
+        count: personnelData.filter((p) => p.department === dept.name).length,
       }))
       .sort((a, b) => b.count - a.count),
-    positionStats: uniquePositions
+    positionStats: positions
       .map((pos) => ({
-        name: pos,
-        count: personnelData.filter((p) => p.position === pos).length,
+        name: pos.name,
+        count: personnelData.filter((p) => p.position === pos.name).length,
       }))
       .sort((a, b) => b.count - a.count),
   }
@@ -632,9 +602,9 @@ export function AdminPanel({
                         <SelectValue placeholder="انتخاب پروژه" />
                       </SelectTrigger>
                       <SelectContent>
-                        {uniqueProjects.map((project) => (
-                          <SelectItem key={project} value={project}>
-                            {project}
+                        {projects.map((project) => (
+                          <SelectItem key={project.id} value={project.name}>
+                            {project.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -660,9 +630,9 @@ export function AdminPanel({
                         <SelectValue placeholder="انتخاب سمت" />
                       </SelectTrigger>
                       <SelectContent>
-                        {uniquePositions.map((position) => (
-                          <SelectItem key={position} value={position}>
-                            {position}
+                        {positions.map((position) => (
+                          <SelectItem key={position.id} value={position.name}>
+                            {position.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -700,7 +670,7 @@ export function AdminPanel({
                   <CardTitle className="text-center text-gray-800">جستجو و ویرایش پرسنل</CardTitle>
                   {selectedPersonnel.length > 0 && (
                     <div className="flex gap-2">
-                      <Select value={bulkAction} onValueChange={setBulkAction}>
+                      <Select value={bulkAction} onValueChange={(value) => setBulkAction(value as "delete" | "export" | "")}>
                         <SelectTrigger className="w-40">
                           <SelectValue placeholder="عملیات گروهی" />
                         </SelectTrigger>
@@ -751,7 +721,7 @@ export function AdminPanel({
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredPersonnel.slice(0, 10).map((person) => (
+                      {paginatedPersonnel.map((person) => (
                         <tr key={person.personnelCode} className="border-b border-gray-100 hover:bg-gray-50">
                           <td className="p-3 text-center">
                             <input
@@ -794,6 +764,19 @@ export function AdminPanel({
                     </tbody>
                   </table>
                 </div>
+                {totalPages > 1 && (
+                    <div className="flex justify-center items-center gap-4 mt-4">
+                        <Button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                            قبلی
+                        </Button>
+                        <span>
+                            صفحه {currentPage} از {totalPages}
+                        </span>
+                        <Button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+                            بعدی
+                        </Button>
+                    </div>
+                )}
               </CardContent>
             </Card>
 
@@ -858,9 +841,9 @@ export function AdminPanel({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {uniqueProjects.map((project) => (
-                              <SelectItem key={project} value={project}>
-                                {project}
+                            {projects.map((project) => (
+                              <SelectItem key={project.id} value={project.name}>
+                                {project.name}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -886,9 +869,9 @@ export function AdminPanel({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {uniquePositions.map((position) => (
-                              <SelectItem key={position} value={position}>
-                                {position}
+                            {positions.map((position) => (
+                              <SelectItem key={position.id} value={position.name}>
+                                {position.name}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -942,19 +925,19 @@ export function AdminPanel({
               </Card>
               <Card className="border-0 shadow-sm bg-white rounded-2xl">
                 <CardContent className="p-6 text-center">
-                  <div className="text-3xl font-bold text-blue-600 mb-2">{uniqueProjects.length}</div>
+                  <div className="text-3xl font-bold text-blue-600 mb-2">{projects.length}</div>
                   <div className="text-gray-600">پروژه‌ها</div>
                 </CardContent>
               </Card>
               <Card className="border-0 shadow-sm bg-white rounded-2xl">
                 <CardContent className="p-6 text-center">
-                  <div className="text-3xl font-bold text-purple-600 mb-2">{uniqueDepartments.length}</div>
+                  <div className="text-3xl font-bold text-purple-600 mb-2">{departments.length}</div>
                   <div className="text-gray-600">بخش‌ها</div>
                 </CardContent>
               </Card>
               <Card className="border-0 shadow-sm bg-white rounded-2xl">
                 <CardContent className="p-6 text-center">
-                  <div className="text-3xl font-bold text-orange-600 mb-2">{uniquePositions.length}</div>
+                  <div className="text-3xl font-bold text-orange-600 mb-2">{positions.length}</div>
                   <div className="text-gray-600">سمت‌ها</div>
                 </CardContent>
               </Card>
@@ -967,7 +950,7 @@ export function AdminPanel({
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {analytics.projectStats.slice(0, 5).map((stat, index) => (
+                    {analytics.projectStats.slice(0, 5).map((stat) => (
                       <div key={stat.name} className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">{stat.name}</span>
                         <div className="flex items-center gap-2">
@@ -991,7 +974,7 @@ export function AdminPanel({
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {analytics.departmentStats.slice(0, 5).map((stat, index) => (
+                    {analytics.departmentStats.slice(0, 5).map((stat) => (
                       <div key={stat.name} className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">{stat.name}</span>
                         <div className="flex items-center gap-2">
@@ -1015,7 +998,7 @@ export function AdminPanel({
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {analytics.positionStats.slice(0, 5).map((stat, index) => (
+                    {analytics.positionStats.slice(0, 5).map((stat) => (
                       <div key={stat.name} className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">{stat.name}</span>
                         <div className="flex items-center gap-2">
@@ -1083,80 +1066,6 @@ export function AdminPanel({
                       dir="rtl"
                       placeholder="طراحی شده توسط..."
                     />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <label className="block text-sm font-medium text-center text-gray-700">لوگو شرکت</label>
-                    <div className="flex flex-col items-center gap-4">
-                      <img
-                        src={appSettings.logoUrl || "/placeholder.svg"}
-                        alt="لوگو فعلی"
-                        className="h-16 w-auto border border-gray-200 rounded-lg"
-                      />
-                      <div className="flex flex-col gap-2 w-full">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
-                          className="hidden"
-                          id="logo-upload"
-                        />
-                        <label
-                          htmlFor="logo-upload"
-                          className="cursor-pointer flex items-center justify-center gap-2 p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
-                        >
-                          <ImageIcon />
-                          انتخاب لوگو جدید
-                        </label>
-                        {logoFile && (
-                          <Button
-                            onClick={() => handleLogoUpload(logoFile, "logo")}
-                            disabled={isUploading}
-                            className="bg-emerald-600 hover:bg-emerald-700 rounded-xl"
-                          >
-                            {isUploading ? "در حال آپلود..." : "آپلود لوگو"}
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <label className="block text-sm font-medium text-center text-gray-700">فاویکون</label>
-                    <div className="flex flex-col items-center gap-4">
-                      <img
-                        src={appSettings.faviconUrl || "/placeholder.svg"}
-                        alt="فاویکون فعلی"
-                        className="h-8 w-8 border border-gray-200 rounded"
-                      />
-                      <div className="flex flex-col gap-2 w-full">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => setFaviconFile(e.target.files?.[0] || null)}
-                          className="hidden"
-                          id="favicon-upload"
-                        />
-                        <label
-                          htmlFor="favicon-upload"
-                          className="cursor-pointer flex items-center justify-center gap-2 p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
-                        >
-                          <ImageIcon />
-                          انتخاب فاویکون جدید
-                        </label>
-                        {faviconFile && (
-                          <Button
-                            onClick={() => handleLogoUpload(faviconFile, "favicon")}
-                            disabled={isUploading}
-                            className="bg-emerald-600 hover:bg-emerald-700 rounded-xl"
-                          >
-                            {isUploading ? "در حال آپلود..." : "آپلود فاویکون"}
-                          </Button>
-                        )}
-                      </div>
-                    </div>
                   </div>
                 </div>
 
@@ -1238,28 +1147,6 @@ export function AdminPanel({
                     </div>
                   </div>
                 )}
-
-                <div className="p-4 bg-yellow-50 rounded-xl border border-yellow-200">
-                  <h3 className="font-semibold text-yellow-900 mb-2">آمار سیستم</h3>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-yellow-700">تعداد کل پرسنل: </span>
-                      <span className="font-semibold text-yellow-900">{personnelData.length} نفر</span>
-                    </div>
-                    <div>
-                      <span className="text-yellow-700">تعداد پروژه‌ها: </span>
-                      <span className="font-semibold text-yellow-900">{uniqueProjects.length} پروژه</span>
-                    </div>
-                    <div>
-                      <span className="text-yellow-700">تعداد بخش‌ها: </span>
-                      <span className="font-semibold text-yellow-900">{uniqueDepartments.length} بخش</span>
-                    </div>
-                    <div>
-                      <span className="text-yellow-700">تعداد سمت‌ها: </span>
-                      <span className="font-semibold text-yellow-900">{uniquePositions.length} سمت</span>
-                    </div>
-                  </div>
-                </div>
               </CardContent>
             </Card>
 

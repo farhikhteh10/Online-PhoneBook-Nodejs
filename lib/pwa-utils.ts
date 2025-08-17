@@ -1,3 +1,4 @@
+// phone-js/lib/pwa-utils.ts
 export class PWAManager {
   private static instance: PWAManager
   private updateAvailable = false
@@ -49,7 +50,7 @@ export class PWAManager {
   }
 
   isInstalled(): boolean {
-    return window.matchMedia("(display-mode: standalone)").matches || (window.navigator as any).standalone === true
+    return window.matchMedia("(display-mode: standalone)").matches || (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
   }
 
   async shareContent(data: { title: string; text: string; url?: string }): Promise<void> {
